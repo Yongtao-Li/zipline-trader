@@ -281,7 +281,7 @@ class DataPortal(object):
             prefetch_length=minute_history_prefetch_length,
         )
 
-        self._first_trading_day = str(first_trading_day.date())
+        self._first_trading_day = pd.Timestamp(first_trading_day.date())
 
         # Get the first trading minute
         self._first_trading_minute, _ = (
