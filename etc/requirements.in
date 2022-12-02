@@ -65,9 +65,9 @@ numexpr==2.7.1
 # Currency Codes
 iso4217>=1.6.20180829
 
-websockets<9,>=7.0
-alpaca-trade-api>=0.51.0
-PyYAML==5.3.1
+websockets<=9.1,>=7.0
+alpaca-trade-api==2.3.0
+PyYAML>=5.3.1
 IbPy2==0.8.0
 polling==0.3.1
 # try using exact version

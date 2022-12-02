@@ -1,5 +1,6 @@
 import collections
 import alpaca_trade_api as tradeapi
+from alpaca_trade_api.rest import TimeFrame
 from datetime import timedelta, time as dtime
 import numpy as np
 from pathlib import Path
@@ -104,24 +105,33 @@ def get_aggs_from_alpaca(symbols,
         optimize server communication time by addressing timeframes
         """
         got_all = False
-        curr = end
+        curr = end + timedelta(days=1)
         response: pd.DataFrame = pd.DataFrame([])
         while not got_all:
+            # API V2 TimeFrame available: Minute, Hour, Day, Week, Month
             if granularity == 'minute' and compression == 5:
                 timeframe = "5Min"
             elif granularity == 'minute' and compression == 15:
                 timeframe = "15Min"
             else:
-                timeframe = granularity
-            r = CLIENT.get_barset(symbols,
+                timeframe = TimeFrame.Day
+            # API V2: use get_bars instead of get_barsets
+            r = CLIENT.get_bars(symbols,
                                   timeframe,
-                                  limit=1000,
-                                  end=curr.isoformat()
+                                  start=start.isoformat(),
+                                  end=curr.isoformat(),
+                                  limit=1000
                                   )
             if r:
                 response = r.df if response.empty else pd.concat([r.df, response])
-                response.sort_index(inplace=True)
-                if response.index[0] <= (pytz.timezone(NY).localize(
+                # response.sort_index(inplace=True)
+                # drop index to update timestamp
+                response = response.reset_index()
+                # API V2: convert to est then use utc
+                response['timestamp'] = response['timestamp'].map(lambda x: x.tz_convert(NY).replace(tzinfo=tz.tzutc()))
+                # create multi level index data frame
+                response = response.set_index(["symbol","timestamp"])
+                if response.index.levels[1][0] <= (pytz.timezone(NY).localize(
                         start) if not start.tzname() else start):
                     got_all = True
                 else:
@@ -143,11 +153,11 @@ def get_aggs_from_alpaca(symbols,
         current = start
         while current <= end:
             if calendar.is_session(current):
-                if current.replace(tzinfo=tz.gettz(NY)) in df.index:
-                    last_val = df.loc[current.replace(tzinfo=tz.gettz(NY))]
+                if current.replace(tzinfo=tz.tzutc()) in df.index:
+                    last_val = df.loc[current.replace(tzinfo=tz.tzutc())]
                 else:
                     # df.loc[pytz.timezone(NY).localize(current)] = last_val
-                    df.loc[current.replace(tzinfo=tz.gettz(NY))] = last_val
+                    df.loc[current.replace(tzinfo=tz.tzutc())] = last_val
             current += timedelta(days=1)
         return df
 
@@ -207,17 +217,17 @@ def get_aggs_from_alpaca(symbols,
     # response = _back_to_aggs(cdl)
     else:
         response = cdl
-    if granularity == 'day':
-        response = response[start:end]  # we only want data between dates
-    processed = pd.DataFrame([], columns=response.columns)
-    for sym in response.columns.levels[0]:
-        df: pd.DataFrame = response[sym]
+    # if granularity == 'day':
+    #     response = response[start:end]  # we only want data between dates
+    processed = pd.DataFrame([], columns=response.columns, index=response.index)
+    for sym in response.index.levels[0]:
+        df: pd.DataFrame = response.loc[sym]
         df = df.dropna()
         df = _fillna(df, granularity, start, end)
-        if processed.empty and not df.empty:
-            processed = processed.reindex(df.index.values)
+        if processed.loc[sym].empty and not df.empty:
+            processed.loc[sym] = processed.loc[sym].reindex(df.index.values)
         if not df.empty:
-            processed[sym] = df
+            processed.loc[sym] = df.values
 
     return processed
 
@@ -232,7 +242,7 @@ def df_generator(interval, start, end, assets_to_sids):
     for i in range(len(asset_list[::MAX_PER_REQUEST_AMOUNT])):
         partial = asset_list[MAX_PER_REQUEST_AMOUNT*i:MAX_PER_REQUEST_AMOUNT*(i+1)]
         df: pd.DataFrame = get_aggs_from_alpaca(partial, start, end, 'day' if interval == '1d' else 'minute', 1)
-        for _, symbol in enumerate(df.columns.levels[0]):
+        for _, symbol in enumerate(df.index.levels[0]):
             try:
                 sid = assets_to_sids[symbol]
                 # doing this makes sure not all data in df is null
@@ -240,11 +250,11 @@ def df_generator(interval, start, end, assets_to_sids):
                 # doing sum twice, makes sure there isn't even one NaN value
                 # and since we do ffill of the data, that should not happen
                 # if df[symbol].isnull().sum().sum() == 0:
-                if not df[symbol].isnull().all().all():
+                if not df.loc[symbol].isnull().all().all():
                     if symbol not in already_ingested:
                         first_traded = start
                         auto_close_date = end + pd.Timedelta(days=1)
-                        yield (sid, df[symbol].sort_index()), symbol, start, end, first_traded, auto_close_date, exchange
+                        yield (sid, df.loc[symbol].sort_index()), symbol, start, end, first_traded, auto_close_date, exchange
                         already_ingested[symbol] = True
 
             except Exception as e:
@@ -330,7 +340,7 @@ if __name__ == '__main__':
     # while not cal.is_session(start_date):
     #     start_date += timedelta(days=1)
 
-    start_date = end_date - timedelta(days=365)
+    start_date = end_date - timedelta(days=30)
     while not cal.is_session(start_date):
         start_date -= timedelta(days=1)
 
