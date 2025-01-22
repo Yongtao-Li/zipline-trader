@@ -262,6 +262,8 @@ def get_non_trading_days(start, end):
     non_trading_days.append(datetime(2004, 6, 11, tzinfo=pytz.utc))
     # - President Gerald R. Ford - Jan 2, 2007
     non_trading_days.append(datetime(2007, 1, 2, tzinfo=pytz.utc))
+    # - President Jimmy Carter - Jan 9, 2025
+    non_trading_days.append(datetime(2025, 1, 9, tzinfo=pytz.utc))
 
     non_trading_days.sort()
     return pd.DatetimeIndex(non_trading_days)
