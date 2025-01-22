@@ -9,6 +9,7 @@ import pytz
 from alpaca_trade_api.common import URL
 from dateutil import tz
 from trading_calendars import TradingCalendar
+from zipline.utils.tradingcalendar import get_non_trading_days
 
 import zipline.config
 from zipline.data.bundles import core as bundles
@@ -152,7 +153,7 @@ def get_aggs_from_alpaca(symbols,
         last_val = df.iloc[0]
         current = start
         while current <= end:
-            if calendar.is_session(current):
+            if current not in get_non_trading_days(start, end):
                 if current.replace(tzinfo=tz.tzutc()) in df.index:
                     last_val = df.loc[current.replace(tzinfo=tz.tzutc())]
                 else:
