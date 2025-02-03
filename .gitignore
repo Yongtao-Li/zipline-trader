@@ -22,6 +22,8 @@ test.log
 
 # Compiled python files
 *.py[co]
+*.pyd
+*.npy
 
 # Packages
 *.egg
