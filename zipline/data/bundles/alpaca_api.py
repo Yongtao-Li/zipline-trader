@@ -119,20 +119,14 @@ def get_aggs_from_alpaca(symbols,
             # API V2: use get_bars instead of get_barsets
             r = CLIENT.get_bars(symbols,
                                   timeframe,
-                                  start=start.isoformat(),
+                                  start=(curr - timedelta(days=int(1000/len(symbols)))).isoformat(),
                                   end=curr.isoformat(),
                                   limit=1000
                                   )
             if r:
                 response = r.df if response.empty else pd.concat([r.df, response])
-                # response.sort_index(inplace=True)
-                # drop index to update timestamp
-                response = response.reset_index()
-                # API V2: convert to est then use utc
-                response['timestamp'] = response['timestamp'].map(lambda x: x.tz_convert(NY).replace(tzinfo=tz.tzutc()))
-                # create multi level index data frame
-                response = response.set_index(["symbol","timestamp"])
-                if response.index.levels[1][0] <= (pytz.timezone(NY).localize(
+                response.sort_index(inplace=True)
+                if response.index[0] <= (pytz.timezone(NY).localize(
                         start) if not start.tzname() else start):
                     got_all = True
                 else:
@@ -142,6 +136,12 @@ def get_aggs_from_alpaca(symbols,
             else:
                 # no more data is available, let's return what we have
                 break
+        # drop index to update timestamp
+        response = response.reset_index()
+        # API V2: convert to est then use utc
+        response['timestamp'] = response['timestamp'].map(lambda x: x.tz_convert(NY).replace(tzinfo=tz.tzutc()))
+        # create multi level index data frame
+        response = response.set_index(["symbol","timestamp"])
         return response
 
     def _fillna(df, granularity, start, end):
@@ -224,7 +224,7 @@ def get_aggs_from_alpaca(symbols,
     for sym in response.index.levels[0]:
         df: pd.DataFrame = response.loc[sym]
         df = df.dropna()
-        df = _fillna(df, granularity, start, end)
+        # df = _fillna(df, granularity, start, end)
         if processed.loc[sym].empty and not df.empty:
             processed.loc[sym] = processed.loc[sym].reindex(df.index.values)
         if not df.empty:
@@ -341,7 +341,7 @@ if __name__ == '__main__':
     # while not cal.is_session(start_date):
     #     start_date += timedelta(days=1)
 
-    start_date = end_date - timedelta(days=30)
+    start_date = end_date - timedelta(days=365*9)
     while not cal.is_session(start_date):
         start_date -= timedelta(days=1)
 
